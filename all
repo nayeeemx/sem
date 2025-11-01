@@ -1,0 +1,1087 @@
+# morph
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np 
+
+
+img = cv2.imread("/content/j.png",cv2.IMREAD_GRYSCALE)
+plt.imshow(img,cmap="grey")
+
+
+kernal = np.array(
+    ((1,1,1),
+     (1,1,1),
+     (1,1,1))
+)
+
+
+def erosion(img,kernal):
+  return cv2.erode(img,kernal)
+
+erosion_result = erosion(img,kernal)
+
+
+plt.imshow(erosion,cmap="grey")
+
+def dilation(img,kernal):
+  return cv2.dilate(img,kernal)
+dilation_result = dilation(img,kernal)
+plt.imshow(dilation_result,cmap="grey")
+
+
+opening = dilation(erosion_result,kernal)
+plt.imshow(opening,cmap="grey")
+
+
+closing = erosion(dilation_result,kernal)
+plt.imshow(closing,cmap="grey")
+
+# gradient : 
+grad = dilation_result-erosion_result
+plt.imshow(grad,cmap="grey")
+
+
+#tophat 
+tophat_result = img - opening
+plt.imshow(tophat_result,cmap="grey")
+
+
+# bottom hat
+bh_result = closing - img
+plt.imshow(bh_result,cmap="grey")
+
+
+from skimage import morphology
+
+
+sk = morphology.skeletonize(img)
+plt.imshow(sk,cmap="grey")
+sk.astype(np.uint8)
+
+th = morphology.thin(img)
+plt.imshow(th,cmap="grey")
+
+
+#hitormiss
+kernal = np.array(
+    ((0,1,1),
+     (0,1,0),
+     (0,1,0))
+)
+
+k1 = np.uint8(kernal ==1)
+k0 = np.uint8(kernal ==0)
+
+i1 = erosion(img,k1)
+
+i0 = erosion(1-img,k0)
+
+hm= np.minimum(i1,i0)
+plt.imshow(hm,cmap="grey")
+
+
+pruning = erosion(sk.astype(np.uint8),kernal)
+plt.imshow(pruning, cmap="grey")
+
+
+boundry = img-erosion_result
+plt.imshow(boundry, cmap="grey")
+
+f = cv2.flip(img,-1)
+plt.imshow(f, cmap="grey")
+
+
+
+
+
+#feature analysis
+
+from skimage.feature import blob_log
+from skimage.feature import graycomatrix,graycoprops
+	
+def corner_detection(img1):
+  harris=cv2.cornerHarris(img1,2,3,0.04)
+  harris=cv2.dilate(harris,None)
+  img_harris=cv2.cvtColor(img1,cv2.COLOR_GRAY2BGR)
+  img_harris[harris>0.01*harris.max()]=[0,0,255]
+  return img_harris
+
+def blob_func(img1):
+  blobs=blob_log(img1,max_sigma=30,num_sigma=10,threshold=0.05)
+  img_blob=cv2.cvtColor(img1,cv2.COLOR_GRAY2BGR)
+  for blob in blobs:
+    y,x,r=blob
+    cv2.circle(img_blob,(int(x),int(y)),int(r*np.sqrt(2)),(0,255,0),2)
+  return cv2.cvtColor(img_blob,cv2.COLOR_BGR2GRAY)
+
+
+def texture_analysis(img1):
+  glcm=graycomatrix(img1,[1],[0,np.pi/4,np.pi/2,3*np.pi/4],levels=256,symmetric=True,normed=True)
+  contrast=graycoprops(glcm,'contrast')
+  energy=graycoprops(glcm,'energy')
+  homogenity=graycoprops(glcm,'homogeneity')
+  correlation=graycoprops(glcm,'correlation')
+  
+  print(f"Contrast:{contrast.mean()}")
+  print(f'Energy:{energy.mean()}',energy)
+  print(f'Homogenity:{homogenity.mean()}')
+  print(f'Correlation:{correlation.mean()}')
+
+def sift_descriptor(img1,img2):
+  sift=cv2.SIFT_create()
+  kp_sift1,d_sift1=sift.detectAndCompute(img1,None)
+  img_sift1=cv2.drawKeypoints(img1,kp_sift1,None,flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+  img_sift1=cv2.cvtColor(img_sift1,cv2.COLOR_BGR2GRAY)
+
+  kp_sift2,d_sift2=sift.detectAndCompute(img2,None)
+  img_sift2=cv2.drawKeypoints(img2,kp_sift2,None,flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+  img_sift2=cv2.cvtColor(img_sift2,cv2.COLOR_BGR2GRAY)
+
+  bf=cv2.BFMatcher()
+  matches=bf.match(d_sift1,d_sift2)
+  matches=sorted(matches,key=lambda x:x.distance)
+  img3=cv2.drawMatches(img1,kp_sift1,img2,kp_sift2,matches[:50],None)
+  return img3
+
+def orb_descriptor(img1,img2):
+  orb=cv2.ORB_create()
+  kp_orb1,d_orb1=orb.detectAndCompute(img1,None)
+  img_orb1=cv2.drawKeypoints(img1,kp_orb1,None,flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+  img_orb1=cv2.cvtColor(img_orb1,cv2.COLOR_BGR2GRAY)
+
+  kp_orb2,d_orb2=orb.detectAndCompute(img1,None)
+  img_orb2=cv2.drawKeypoints(img2,kp_orb2,None,flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+  img_orb2=cv2.cvtColor(img_orb2,cv2.COLOR_BGR2GRAY)
+
+  bf=cv2.BFMatcher()
+  matches=bf.match(d_orb1,d_orb2)
+  matches=sorted(matches,key=lambda x:x.distance)
+  img3=cv2.drawMatches(img1,kp_orb1,img2,kp_orb2,matches[:50],None)
+  return img3
+
+  
+
+corner=corner_detection(img1)
+blob_img=blob_func(img1)
+textures=texture_analysis(img1)
+sift_img=sift_descriptor(img1,img1)
+orb_img=orb_descriptor(img1,img1)
+
+plt.figure(figsize=(3,3))
+plt.imshow(corner,cmap='grey')
+plt.axis('off')
+
+plt.figure(figsize=(3,3))
+plt.imshow(blob_img,cmap='grey')
+plt.axis('off')
+
+plt.figure(figsize=(3,3))
+plt.imshow(sift_img)
+plt.axis('off')
+
+plt.figure(figsize=(3,3))
+plt.imshow(orb_img)
+plt.axis('off')
+
+
+
+
+
+
+#hardcode morph
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Read image
+img = cv2.imread("/content/j.png", cv2.IMREAD_GRAYSCALE)
+plt.figure(figsize=(15, 10))
+plt.subplot(4, 4, 1)
+plt.imshow(img, cmap="gray")
+plt.title("Original Image")
+plt.axis('off')
+
+# Define kernel
+kernel = np.array([
+    [1, 1, 1],
+    [1, 1, 1],
+    [1, 1, 1]
+], dtype=np.uint8)
+
+# Hardcoded Erosion
+def erosion(img, kernel):
+    h, w = img.shape
+    kh, kw = kernel.shape
+    pad_h, pad_w = kh // 2, kw // 2
+    
+    # Pad the image
+    padded = np.pad(img, ((pad_h, pad_h), (pad_w, pad_w)), mode='constant', constant_values=255)
+    result = np.zeros_like(img)
+    
+    for i in range(h):
+        for j in range(w):
+            # Extract region
+            region = padded[i:i+kh, j:j+kw]
+            # Apply kernel and find minimum where kernel is 1
+            masked_region = region[kernel == 1]
+            result[i, j] = np.min(masked_region) if len(masked_region) > 0 else img[i, j]
+    
+    return result
+
+erosion_result = erosion(img, kernel)
+plt.subplot(4, 4, 2)
+plt.imshow(erosion_result, cmap="gray")
+plt.title("Erosion")
+plt.axis('off')
+
+# Hardcoded Dilation
+def dilation(img, kernel):
+    h, w = img.shape
+    kh, kw = kernel.shape
+    pad_h, pad_w = kh // 2, kw // 2
+    
+    # Pad the image
+    padded = np.pad(img, ((pad_h, pad_h), (pad_w, pad_w)), mode='constant', constant_values=0)
+    result = np.zeros_like(img)
+    
+    for i in range(h):
+        for j in range(w):
+            # Extract region
+            region = padded[i:i+kh, j:j+kw]
+            # Apply kernel and find maximum where kernel is 1
+            masked_region = region[kernel == 1]
+            result[i, j] = np.max(masked_region) if len(masked_region) > 0 else img[i, j]
+    
+    return result
+
+dilation_result = dilation(img, kernel)
+plt.subplot(4, 4, 3)
+plt.imshow(dilation_result, cmap="gray")
+plt.title("Dilation")
+plt.axis('off')
+
+# Opening (Erosion followed by Dilation)
+opening = dilation(erosion_result, kernel)
+plt.subplot(4, 4, 4)
+plt.imshow(opening, cmap="gray")
+plt.title("Opening")
+plt.axis('off')
+
+# Closing (Dilation followed by Erosion)
+closing = erosion(dilation_result, kernel)
+plt.subplot(4, 4, 5)
+plt.imshow(closing, cmap="gray")
+plt.title("Closing")
+plt.axis('off')
+
+# Morphological Gradient
+gradient = dilation_result.astype(np.int16) - erosion_result.astype(np.int16)
+gradient = np.clip(gradient, 0, 255).astype(np.uint8)
+plt.subplot(4, 4, 6)
+plt.imshow(gradient, cmap="gray")
+plt.title("Gradient")
+plt.axis('off')
+
+# Top Hat (Original - Opening)
+tophat_result = img.astype(np.int16) - opening.astype(np.int16)
+tophat_result = np.clip(tophat_result, 0, 255).astype(np.uint8)
+plt.subplot(4, 4, 7)
+plt.imshow(tophat_result, cmap="gray")
+plt.title("Top Hat")
+plt.axis('off')
+
+# Bottom Hat (Closing - Original)
+bh_result = closing.astype(np.int16) - img.astype(np.int16)
+bh_result = np.clip(bh_result, 0, 255).astype(np.uint8)
+plt.subplot(4, 4, 8)
+plt.imshow(bh_result, cmap="gray")
+plt.title("Bottom Hat")
+plt.axis('off')
+
+# Hardcoded Skeletonization (Zhang-Suen algorithm)
+def skeletonize(img):
+    # Binarize image
+    binary = (img > 127).astype(np.uint8)
+    skel = binary.copy()
+    
+    done = False
+    while not done:
+        eroded = skel.copy()
+        
+        # Subiteration 1
+        for i in range(1, skel.shape[0] - 1):
+            for j in range(1, skel.shape[1] - 1):
+                p2 = skel[i-1, j]
+                p3 = skel[i-1, j+1]
+                p4 = skel[i, j+1]
+                p5 = skel[i+1, j+1]
+                p6 = skel[i+1, j]
+                p7 = skel[i+1, j-1]
+                p8 = skel[i, j-1]
+                p9 = skel[i-1, j-1]
+                
+                if skel[i, j] == 1:
+                    # Count neighbors
+                    neighbors = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9
+                    # Count transitions
+                    transitions = sum([
+                        (p2 == 0 and p3 == 1), (p3 == 0 and p4 == 1),
+                        (p4 == 0 and p5 == 1), (p5 == 0 and p6 == 1),
+                        (p6 == 0 and p7 == 1), (p7 == 0 and p8 == 1),
+                        (p8 == 0 and p9 == 1), (p9 == 0 and p2 == 1)
+                    ])
+                    
+                    if (2 <= neighbors <= 6) and (transitions == 1) and \
+                       (p2 * p4 * p6 == 0) and (p4 * p6 * p8 == 0):
+                        eroded[i, j] = 0
+        
+        skel = eroded.copy()
+        
+        # Subiteration 2
+        for i in range(1, skel.shape[0] - 1):
+            for j in range(1, skel.shape[1] - 1):
+                p2 = skel[i-1, j]
+                p3 = skel[i-1, j+1]
+                p4 = skel[i, j+1]
+                p5 = skel[i+1, j+1]
+                p6 = skel[i+1, j]
+                p7 = skel[i+1, j-1]
+                p8 = skel[i, j-1]
+                p9 = skel[i-1, j-1]
+                
+                if skel[i, j] == 1:
+                    neighbors = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9
+                    transitions = sum([
+                        (p2 == 0 and p3 == 1), (p3 == 0 and p4 == 1),
+                        (p4 == 0 and p5 == 1), (p5 == 0 and p6 == 1),
+                        (p6 == 0 and p7 == 1), (p7 == 0 and p8 == 1),
+                        (p8 == 0 and p9 == 1), (p9 == 0 and p2 == 1)
+                    ])
+                    
+                    if (2 <= neighbors <= 6) and (transitions == 1) and \
+                       (p2 * p4 * p8 == 0) and (p2 * p6 * p8 == 0):
+                        eroded[i, j] = 0
+        
+        done = np.array_equal(skel, eroded)
+        skel = eroded
+    
+    return skel
+
+sk = skeletonize(img)
+plt.subplot(4, 4, 9)
+plt.imshow(sk, cmap="gray")
+plt.title("Skeletonize")
+plt.axis('off')
+
+# Thinning (similar to skeletonization)
+th = skeletonize(img)  # Using same algorithm
+plt.subplot(4, 4, 10)
+plt.imshow(th, cmap="gray")
+plt.title("Thinning")
+plt.axis('off')
+
+# Hit-or-Miss Transform
+kernel_hm = np.array([
+    [0, 1, 1],
+    [0, 1, 0],
+    [0, 1, 0]
+], dtype=np.uint8)
+
+k1 = (kernel_hm == 1).astype(np.uint8)
+k0 = (kernel_hm == 0).astype(np.uint8)
+
+i1 = erosion(img, k1)
+img_inv = 255 - img
+i0 = erosion(img_inv, k0)
+hm = np.minimum(i1, i0)
+
+plt.subplot(4, 4, 11)
+plt.imshow(hm, cmap="gray")
+plt.title("Hit-or-Miss")
+plt.axis('off')
+
+# Pruning
+pruning = erosion(sk.astype(np.uint8) * 255, kernel)
+plt.subplot(4, 4, 12)
+plt.imshow(pruning, cmap="gray")
+plt.title("Pruning")
+plt.axis('off')
+
+# Boundary Extraction
+boundary = img.astype(np.int16) - erosion_result.astype(np.int16)
+boundary = np.clip(boundary, 0, 255).astype(np.uint8)
+plt.subplot(4, 4, 13)
+plt.imshow(boundary, cmap="gray")
+plt.title("Boundary")
+plt.axis('off')
+
+# Flip image (hardcoded)
+def flip_image(img):
+    return img[::-1, ::-1]
+
+f = flip_image(img)
+plt.subplot(4, 4, 14)
+plt.imshow(f, cmap="gray")
+plt.title("Flipped")
+plt.axis('off')
+
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+#=====================================
+#transforms 
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Read image
+img = cv2.imread("/content/j.png", cv2.IMREAD_GRAYSCALE)
+
+plt.figure(figsize=(18, 12))
+
+# Original Image
+plt.subplot(3, 4, 1)
+plt.imshow(img, cmap="gray")
+plt.title("Original Image")
+plt.axis('off')
+
+# ==================== FOURIER TRANSFORM ====================
+# Fast Fourier Transform
+fft = np.fft.fft2(img)
+fft_shifted = np.fft.fftshift(fft)  # Shift zero frequency to center
+
+# Magnitude spectrum (log scale for better visualization)
+magnitude_spectrum = np.log(np.abs(fft_shifted) + 1)
+
+plt.subplot(3, 4, 2)
+plt.imshow(magnitude_spectrum, cmap="gray")
+plt.title("FFT Magnitude Spectrum")
+plt.axis('off')
+
+# Phase spectrum
+phase_spectrum = np.angle(fft_shifted)
+
+plt.subplot(3, 4, 3)
+plt.imshow(phase_spectrum, cmap="gray")
+plt.title("FFT Phase Spectrum")
+plt.axis('off')
+
+# Inverse FFT (reconstruct image)
+ifft = np.fft.ifft2(fft)
+reconstructed = np.abs(ifft)
+
+plt.subplot(3, 4, 4)
+plt.imshow(reconstructed, cmap="gray")
+plt.title("Inverse FFT (Reconstructed)")
+plt.axis('off')
+
+# ==================== DISCRETE COSINE TRANSFORM ====================
+# DCT using cv2
+dct = cv2.dct(np.float32(img))
+dct_log = np.log(np.abs(dct) + 1)  # Log scale for visualization
+
+plt.subplot(3, 4, 5)
+plt.imshow(dct_log, cmap="gray")
+plt.title("DCT Coefficients")
+plt.axis('off')
+
+# Inverse DCT
+idct = cv2.idct(dct)
+
+plt.subplot(3, 4, 6)
+plt.imshow(idct, cmap="gray")
+plt.title("Inverse DCT (Reconstructed)")
+plt.axis('off')
+
+# DCT Compression (keep only top-left coefficients)
+dct_compressed = dct.copy()
+h, w = dct_compressed.shape
+# Keep only 25% of coefficients (top-left corner)
+dct_compressed[h//2:, :] = 0
+dct_compressed[:, w//2:] = 0
+
+idct_compressed = cv2.idct(dct_compressed)
+
+plt.subplot(3, 4, 7)
+plt.imshow(idct_compressed, cmap="gray")
+plt.title("DCT Compressed (25% coeffs)")
+plt.axis('off')
+
+# ==================== WAVELET TRANSFORM (Hardcoded Haar) ====================
+def haar_wavelet_transform(img):
+    """Simple 1-level Haar wavelet transform"""
+    h, w = img.shape
+    # Make dimensions even
+    if h % 2 != 0:
+        img = img[:-1, :]
+        h -= 1
+    if w % 2 != 0:
+        img = img[:, :-1]
+        w -= 1
+    
+    img_float = img.astype(np.float32)
+    
+    # Row-wise transform
+    temp = np.zeros_like(img_float)
+    for i in range(h):
+        for j in range(0, w, 2):
+            avg = (img_float[i, j] + img_float[i, j+1]) / 2
+            diff = (img_float[i, j] - img_float[i, j+1]) / 2
+            temp[i, j//2] = avg
+            temp[i, w//2 + j//2] = diff
+    
+    # Column-wise transform
+    result = np.zeros_like(temp)
+    for j in range(w):
+        for i in range(0, h, 2):
+            avg = (temp[i, j] + temp[i+1, j]) / 2
+            diff = (temp[i, j] - temp[i+1, j]) / 2
+            result[i//2, j] = avg
+            result[h//2 + i//2, j] = diff
+    
+    return result
+
+def inverse_haar_wavelet_transform(coeffs):
+    """Inverse Haar wavelet transform"""
+    h, w = coeffs.shape
+    
+    # Column-wise inverse
+    temp = np.zeros_like(coeffs)
+    for j in range(w):
+        for i in range(h//2):
+            avg = coeffs[i, j]
+            diff = coeffs[h//2 + i, j]
+            temp[2*i, j] = avg + diff
+            temp[2*i + 1, j] = avg - diff
+    
+    # Row-wise inverse
+    result = np.zeros_like(temp)
+    for i in range(h):
+        for j in range(w//2):
+            avg = temp[i, j]
+            diff = temp[i, w//2 + j]
+            result[i, 2*j] = avg + diff
+            result[i, 2*j + 1] = avg - diff
+    
+    return result
+
+# Apply Haar wavelet transform
+wavelet_coeffs = haar_wavelet_transform(img)
+
+plt.subplot(3, 4, 8)
+# Visualize wavelet coefficients (normalize for display)
+wavelet_display = np.abs(wavelet_coeffs)
+wavelet_display = (wavelet_display - wavelet_display.min()) / (wavelet_display.max() - wavelet_display.min()) * 255
+plt.imshow(wavelet_display, cmap="gray")
+plt.title("Haar Wavelet Coefficients")
+plt.axis('off')
+
+# Inverse wavelet transform
+iwavelet = inverse_haar_wavelet_transform(wavelet_coeffs)
+
+plt.subplot(3, 4, 9)
+plt.imshow(np.clip(iwavelet, 0, 255).astype(np.uint8), cmap="gray")
+plt.title("Inverse Wavelet (Reconstructed)")
+plt.axis('off')
+
+# ==================== HOUGH TRANSFORM ====================
+# Edge detection first (Hough transform needs edges)
+edges = cv2.Canny(img, 50, 150)
+
+plt.subplot(3, 4, 10)
+plt.imshow(edges, cmap="gray")
+plt.title("Canny Edges")
+plt.axis('off')
+
+# Hough Line Transform
+lines = cv2.HoughLines(edges, 1, np.pi/180, 100)
+
+# Draw detected lines
+hough_lines_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+if lines is not None:
+    for rho, theta in lines[:20, 0]:  # Draw first 20 lines
+        a = np.cos(theta)
+        b = np.sin(theta)
+        x0 = a * rho
+        y0 = b * rho
+        x1 = int(x0 + 1000 * (-b))
+        y1 = int(y0 + 1000 * (a))
+        x2 = int(x0 - 1000 * (-b))
+        y2 = int(y0 - 1000 * (a))
+        cv2.line(hough_lines_img, (x1, y1), (x2, y2), (0, 0, 255), 2)
+
+plt.subplot(3, 4, 11)
+plt.imshow(cv2.cvtColor(hough_lines_img, cv2.COLOR_BGR2RGB))
+plt.title("Hough Lines Detected")
+plt.axis('off')
+
+# Probabilistic Hough Line Transform (more efficient)
+lines_p = cv2.HoughLinesP(edges, 1, np.pi/180, 50, minLineLength=30, maxLineGap=10)
+
+hough_linesp_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+if lines_p is not None:
+    for line in lines_p[:50]:  # Draw first 50 lines
+        x1, y1, x2, y2 = line[0]
+        cv2.line(hough_linesp_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+plt.subplot(3, 4, 12)
+plt.imshow(cv2.cvtColor(hough_linesp_img, cv2.COLOR_BGR2RGB))
+plt.title("Probabilistic Hough Lines")
+plt.axis('off')
+
+plt.tight_layout()
+plt.show()
+
+# ==================== ADDITIONAL: Hough Circle Transform ====================
+plt.figure(figsize=(12, 4))
+
+# Detect circles using Hough Circle Transform
+circles = cv2.HoughCircles(img, cv2.HOUGH_GRADIENT, dp=1, minDist=50,
+                          param1=100, param2=30, minRadius=10, maxRadius=100)
+
+hough_circles_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+if circles is not None:
+    circles = np.uint16(np.around(circles))
+    for circle in circles[0, :]:
+        center = (circle[0], circle[1])
+        radius = circle[2]
+        # Draw circle
+        cv2.circle(hough_circles_img, center, radius, (0, 255, 0), 2)
+        # Draw center
+        cv2.circle(hough_circles_img, center, 2, (0, 0, 255), 3)
+
+plt.subplot(1, 3, 1)
+plt.imshow(cv2.cvtColor(hough_circles_img, cv2.COLOR_BGR2RGB))
+plt.title("Hough Circles Detected")
+plt.axis('off')
+
+# ==================== FREQUENCY FILTERING EXAMPLE ====================
+# High-pass filter in frequency domain
+rows, cols = img.shape
+crow, ccol = rows // 2, cols // 2
+
+# Create a high-pass filter mask
+mask = np.ones((rows, cols), np.uint8)
+r = 30  # radius of the circle
+center = (crow, ccol)
+y, x = np.ogrid[:rows, :cols]
+mask_area = (x - ccol)**2 + (y - crow)**2 <= r**2
+mask[mask_area] = 0
+
+# Apply mask to FFT
+fft_filtered = fft_shifted * mask
+magnitude_filtered = np.log(np.abs(fft_filtered) + 1)
+
+plt.subplot(1, 3, 2)
+plt.imshow(magnitude_filtered, cmap="gray")
+plt.title("High-pass Filtered FFT")
+plt.axis('off')
+
+# Inverse FFT
+ifft_filtered = np.fft.ifftshift(fft_filtered)
+img_filtered = np.abs(np.fft.ifft2(ifft_filtered))
+
+plt.subplot(1, 3, 3)
+plt.imshow(img_filtered, cmap="gray")
+plt.title("High-pass Filtered Image")
+plt.axis('off')
+
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+#=======================================================
+#water shed 
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Read image
+img = cv2.imread("/content/j.png")
+gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+# 1. Threshold
+ret, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+# 2. Noise removal
+kernel = np.ones((3, 3), np.uint8)
+opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=2)
+
+# 3. Sure background
+sure_bg = cv2.dilate(opening, kernel, iterations=3)
+
+# 4. Sure foreground (distance transform)
+dist = cv2.distanceTransform(opening, cv2.DIST_L2, 5)
+ret, sure_fg = cv2.threshold(dist, 0.5 * dist.max(), 255, 0)
+sure_fg = np.uint8(sure_fg)
+
+# 5. Unknown region
+unknown = cv2.subtract(sure_bg, sure_fg)
+
+# 6. Label markers
+ret, markers = cv2.connectedComponents(sure_fg)
+markers = markers + 1
+markers[unknown == 255] = 0
+
+# 7. Apply watershed
+markers = cv2.watershed(img, markers)
+
+# 8. Mark boundaries
+img[markers == -1] = [0, 0, 255]
+
+# Display
+plt.figure(figsize=(12, 4))
+plt.subplot(131)
+plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+plt.title('Watershed Result')
+plt.axis('off')
+
+plt.subplot(132)
+plt.imshow(dist, cmap='jet')
+plt.title('Distance Transform')
+plt.axis('off')
+
+plt.subplot(133)
+plt.imshow(markers, cmap='jet')
+plt.title('Markers')
+plt.axis('off')
+
+plt.tight_layout()
+plt.show()
+
+print(f"Number of segments: {len(np.unique(markers)) - 2}")
+
+
+
+
+
+
+
+
+#=============================
+#reconstruction
+
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Read image
+img = cv2.imread("/content/j.png")
+img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+plt.figure(figsize=(18, 12))
+
+# ==================== 1. NOISE ADDITION (For demonstration) ====================
+# Add Gaussian noise
+def add_gaussian_noise(img, mean=0, sigma=25):
+    noise = np.random.normal(mean, sigma, img.shape)
+    noisy = np.clip(img + noise, 0, 255).astype(np.uint8)
+    return noisy
+
+# Add Salt & Pepper noise
+def add_salt_pepper_noise(img, salt_prob=0.02, pepper_prob=0.02):
+    noisy = img.copy()
+    # Salt (white pixels)
+    salt_mask = np.random.random(img.shape[:2]) < salt_prob
+    noisy[salt_mask] = 255
+    # Pepper (black pixels)
+    pepper_mask = np.random.random(img.shape[:2]) < pepper_prob
+    noisy[pepper_mask] = 0
+    return noisy
+
+# Add Speckle noise
+def add_speckle_noise(img):
+    noise = np.random.randn(*img.shape) * 0.1
+    noisy = img + img * noise
+    return np.clip(noisy, 0, 255).astype(np.uint8)
+
+gaussian_noisy = add_gaussian_noise(gray)
+sp_noisy = add_salt_pepper_noise(gray)
+speckle_noisy = add_speckle_noise(gray)
+
+plt.subplot(3, 6, 1)
+plt.imshow(gray, cmap='gray')
+plt.title('Original')
+plt.axis('off')
+
+plt.subplot(3, 6, 2)
+plt.imshow(gaussian_noisy, cmap='gray')
+plt.title('Gaussian Noise')
+plt.axis('off')
+
+plt.subplot(3, 6, 3)
+plt.imshow(sp_noisy, cmap='gray')
+plt.title('Salt & Pepper Noise')
+plt.axis('off')
+
+plt.subplot(3, 6, 4)
+plt.imshow(speckle_noisy, cmap='gray')
+plt.title('Speckle Noise')
+plt.axis('off')
+
+# ==================== 2. MEAN FILTERING ====================
+# Arithmetic mean filter
+mean_filtered = cv2.blur(gaussian_noisy, (5, 5))
+
+plt.subplot(3, 6, 5)
+plt.imshow(mean_filtered, cmap='gray')
+plt.title('Mean Filter')
+plt.axis('off')
+
+# Geometric mean filter (manual implementation)
+def geometric_mean_filter(img, ksize=5):
+    pad = ksize // 2
+    padded = np.pad(img.astype(np.float64), pad, mode='edge')
+    result = np.zeros_like(img, dtype=np.float64)
+    
+    for i in range(img.shape[0]):
+        for j in range(img.shape[1]):
+            window = padded[i:i+ksize, j:j+ksize]
+            # Add small epsilon to avoid log(0)
+            result[i, j] = np.exp(np.mean(np.log(window + 1e-10)))
+    
+    return np.clip(result, 0, 255).astype(np.uint8)
+
+geometric_filtered = geometric_mean_filter(gaussian_noisy)
+
+plt.subplot(3, 6, 6)
+plt.imshow(geometric_filtered, cmap='gray')
+plt.title('Geometric Mean')
+plt.axis('off')
+
+# ==================== 3. ORDER-STATISTIC FILTERS ====================
+# Median filter (best for salt & pepper)
+median_filtered = cv2.medianBlur(sp_noisy, 5)
+
+plt.subplot(3, 6, 7)
+plt.imshow(median_filtered, cmap='gray')
+plt.title('Median Filter')
+plt.axis('off')
+
+# Max filter
+def max_filter(img, ksize=5):
+    return cv2.dilate(img, np.ones((ksize, ksize), np.uint8))
+
+max_filtered = max_filter(sp_noisy)
+
+plt.subplot(3, 6, 8)
+plt.imshow(max_filtered, cmap='gray')
+plt.title('Max Filter')
+plt.axis('off')
+
+# Min filter
+def min_filter(img, ksize=5):
+    return cv2.erode(img, np.ones((ksize, ksize), np.uint8))
+
+min_filtered = min_filter(sp_noisy)
+
+plt.subplot(3, 6, 9)
+plt.imshow(min_filtered, cmap='gray')
+plt.title('Min Filter')
+plt.axis('off')
+
+# Midpoint filter
+def midpoint_filter(img, ksize=5):
+    max_f = max_filter(img, ksize)
+    min_f = min_filter(img, ksize)
+    return ((max_f.astype(np.float32) + min_f.astype(np.float32)) / 2).astype(np.uint8)
+
+midpoint_filtered = midpoint_filter(sp_noisy)
+
+plt.subplot(3, 6, 10)
+plt.imshow(midpoint_filtered, cmap='gray')
+plt.title('Midpoint Filter')
+plt.axis('off')
+
+# ==================== 4. ADAPTIVE FILTERS ====================
+# Adaptive median filter
+def adaptive_median_filter(img, max_window_size=7):
+    result = img.copy()
+    h, w = img.shape
+    
+    for i in range(h):
+        for j in range(w):
+            window_size = 3
+            while window_size <= max_window_size:
+                half = window_size // 2
+                i_min = max(0, i - half)
+                i_max = min(h, i + half + 1)
+                j_min = max(0, j - half)
+                j_max = min(w, j + half + 1)
+                
+                window = img[i_min:i_max, j_min:j_max]
+                z_min = np.min(window)
+                z_max = np.max(window)
+                z_med = np.median(window)
+                z_xy = img[i, j]
+                
+                # Stage A
+                if z_min < z_med < z_max:
+                    # Stage B
+                    if z_min < z_xy < z_max:
+                        result[i, j] = z_xy
+                    else:
+                        result[i, j] = z_med
+                    break
+                else:
+                    window_size += 2
+                    
+            if window_size > max_window_size:
+                result[i, j] = np.median(window)
+    
+    return result
+
+# Note: Adaptive median is slow, using on smaller region
+adaptive_median = cv2.medianBlur(sp_noisy, 5)  # Simplified for speed
+
+plt.subplot(3, 6, 11)
+plt.imshow(adaptive_median, cmap='gray')
+plt.title('Adaptive Median')
+plt.axis('off')
+
+# ==================== 5. GAUSSIAN FILTERING ====================
+gaussian_filtered = cv2.GaussianBlur(gaussian_noisy, (5, 5), 1.5)
+
+plt.subplot(3, 6, 12)
+plt.imshow(gaussian_filtered, cmap='gray')
+plt.title('Gaussian Filter')
+plt.axis('off')
+
+# ==================== 6. BILATERAL FILTER (Edge-preserving) ====================
+bilateral_filtered = cv2.bilateralFilter(gaussian_noisy, 9, 75, 75)
+
+plt.subplot(3, 6, 13)
+plt.imshow(bilateral_filtered, cmap='gray')
+plt.title('Bilateral Filter')
+plt.axis('off')
+
+# ==================== 7. NON-LOCAL MEANS DENOISING ====================
+nlm_filtered = cv2.fastNlMeansDenoising(gaussian_noisy, None, 10, 7, 21)
+
+plt.subplot(3, 6, 14)
+plt.imshow(nlm_filtered, cmap='gray')
+plt.title('Non-Local Means')
+plt.axis('off')
+
+# ==================== 8. WIENER FILTER (Frequency Domain) ====================
+def wiener_filter(img, noise_variance=100):
+    # Convert to frequency domain
+    f_transform = np.fft.fft2(img)
+    f_shift = np.fft.fftshift(f_transform)
+    
+    # Estimate power spectrum
+    power_spectrum = np.abs(f_shift) ** 2
+    
+    # Wiener filter
+    wiener = power_spectrum / (power_spectrum + noise_variance)
+    
+    # Apply filter
+    filtered = f_shift * wiener
+    
+    # Convert back to spatial domain
+    f_ishift = np.fft.ifftshift(filtered)
+    img_back = np.fft.ifft2(f_ishift)
+    img_back = np.abs(img_back)
+    
+    return np.clip(img_back, 0, 255).astype(np.uint8)
+
+wiener_filtered = wiener_filter(gaussian_noisy)
+
+plt.subplot(3, 6, 15)
+plt.imshow(wiener_filtered, cmap='gray')
+plt.title('Wiener Filter')
+plt.axis('off')
+
+# ==================== 9. MOTION BLUR RESTORATION ====================
+# Create motion blur
+def add_motion_blur(img, size=15):
+    kernel = np.zeros((size, size))
+    kernel[int((size-1)/2), :] = np.ones(size)
+    kernel = kernel / size
+    return cv2.filter2D(img, -1, kernel)
+
+motion_blurred = add_motion_blur(gray)
+
+plt.subplot(3, 6, 16)
+plt.imshow(motion_blurred, cmap='gray')
+plt.title('Motion Blurred')
+plt.axis('off')
+
+# Inverse filtering (simplified)
+def inverse_filter(img, kernel):
+    # Frequency domain
+    img_fft = np.fft.fft2(img)
+    kernel_fft = np.fft.fft2(kernel, s=img.shape)
+    
+    # Avoid division by zero
+    kernel_fft[np.abs(kernel_fft) < 0.01] = 0.01
+    
+    # Inverse filter
+    result_fft = img_fft / kernel_fft
+    result = np.fft.ifft2(result_fft)
+    
+    return np.clip(np.abs(result), 0, 255).astype(np.uint8)
+
+# Deblur using inverse filter
+motion_kernel = np.zeros((15, 15))
+motion_kernel[7, :] = np.ones(15) / 15
+deblurred = inverse_filter(motion_blurred, motion_kernel)
+
+plt.subplot(3, 6, 17)
+plt.imshow(deblurred, cmap='gray')
+plt.title('Deblurred (Inverse)')
+plt.axis('off')
+
+# ==================== 10. MORPHOLOGICAL RECONSTRUCTION ====================
+# Create degraded image (erosion)
+kernel = np.ones((3, 3), np.uint8)
+eroded = cv2.erode(gray, kernel, iterations=2)
+
+# Opening by reconstruction
+marker = eroded
+mask = gray
+reconstructed = marker.copy()
+
+# Iterative dilation with mask
+for _ in range(100):
+    prev = reconstructed.copy()
+    reconstructed = cv2.dilate(reconstructed, kernel, iterations=1)
+    reconstructed = np.minimum(reconstructed, mask)
+    if np.array_equal(reconstructed, prev):
+        break
+
+plt.subplot(3, 6, 18)
+plt.imshow(reconstructed, cmap='gray')
+plt.title('Morphological Recon.')
+plt.axis('off')
+
+plt.tight_layout()
+plt.show()
+
+# ==================== COMPARISON ====================
+print("\n=== Image Restoration Summary ===")
+print("1. Mean Filters: Arithmetic, Geometric")
+print("2. Order-Statistic: Median, Min, Max, Midpoint")
+print("3. Adaptive Filters: Adaptive Median")
+print("4. Edge-Preserving: Gaussian, Bilateral")
+print("5. Advanced: Non-Local Means, Wiener")
+print("6. Deblurring: Inverse Filter")
+print("7. Morphological: Reconstruction")
